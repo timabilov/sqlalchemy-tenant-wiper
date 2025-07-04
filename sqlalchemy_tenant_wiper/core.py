@@ -5,6 +5,7 @@ import traceback
 from collections import defaultdict
 from time import perf_counter
 from typing import Any, Callable, Dict, List, Optional, Set
+from unittest.mock import Mock
 
 from sqlalchemy import or_, select, tuple_
 from sqlalchemy.orm import Session
@@ -12,6 +13,17 @@ from sqlalchemy.schema import Table
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class ColumnRecorder:
+    """Records column access for tenant filter validation."""
+
+    def __init__(self):
+        self.accessed_columns = set()
+
+    def __getattr__(self, column_name):
+        self.accessed_columns.add(column_name)
+        return Mock()  # Return mock for any method calls (in_, ==, etc.)
 
 
 class TenantWiperConfig:
@@ -28,7 +40,7 @@ class TenantWiperConfig:
     ):
         """
         Initialize tenant wiper configuration.
-        
+
         Args:
             base: SQLAlchemy declarative Base
             tenant_filters: List of lambda expressions for tenant filtering
@@ -56,6 +68,7 @@ class TenantWiperConfig:
             source_table = relationship_str.split('__', 1)[0]
             relationship_dict[source_table] = relationship_str
         return relationship_dict
+
 
     def validate(self) -> None:
         """Validate configuration for correctness."""
@@ -122,12 +135,11 @@ class TenantWiperConfig:
         """Check if any tenant filter can be applied to this table."""
         for tenant_filter in self.tenant_filters:
             try:
-                # Try to apply the filter to see if it works
-                tenant_filter(table)
-                return True
-            except (AttributeError, KeyError):
-                # Filter doesn't apply to this table
-                continue
+                if _can_apply_tenant_filter(table, tenant_filter):
+                    return True
+            except ValueError:
+                # Syntax error - re-raise to surface the issue
+                raise
         return False
 
 
@@ -207,6 +219,42 @@ def _get_all_columns_for_table(table_name: str, metadata, base) -> Set[str]:
     return set()
 
 
+def _can_apply_tenant_filter(table: Table, tenant_filter) -> bool:
+    """
+    Check if table can be filtered by the given tenant filter directly.
+
+    Returns:
+        True: Filter can be applied successfully
+        False: Filter cannot be applied due to missing columns
+
+    Raises:
+        ValueError: Filter has syntax/expression errors
+    """
+    # Record column access with mock
+    recorder = ColumnRecorder()
+    mock_table = Mock()
+    mock_table.c = recorder
+
+    try:
+        tenant_filter(mock_table)
+    except Exception as e:
+        # Even mock failed - syntax error
+        raise ValueError(f'Filter syntax error: {e}')
+
+    # Check if accessed columns exist in real table
+    missing_columns = [col for col in recorder.accessed_columns
+                     if col not in table.c]
+    if missing_columns:
+        return False  # Table doesn't have required columns
+
+    # Run with real table to catch SQLAlchemy DSL errors
+    try:
+        tenant_filter(table)
+        return True  # Filter works correctly
+    except Exception as e:
+        raise ValueError(f'Filter expression error for table {table.name}: {e}')
+
+
 def _validate_relationship_path(relationship_path: str, metadata, tenant_filters=None) -> List[str]:
     """
     Validate that all tables and columns referenced in a relationship path actually exist.
@@ -253,13 +301,12 @@ def _validate_relationship_path(relationship_path: str, metadata, tenant_filters
         can_filter_final_table = False
         for tenant_filter in tenant_filters:
             try:
-                # Try to apply the filter to see if it works
-                tenant_filter(final_table)
-                can_filter_final_table = True
-                break
-            except (AttributeError, KeyError):
-                # Filter doesn't apply to this table
-                continue
+                if _can_apply_tenant_filter(final_table, tenant_filter):
+                    can_filter_final_table = True
+                    break
+            except ValueError:
+                # Syntax error - re-raise to surface the issue
+                raise
 
         if not can_filter_final_table:
             errors.append(
@@ -269,7 +316,7 @@ def _validate_relationship_path(relationship_path: str, metadata, tenant_filters
             )
 
     end_time = perf_counter()
-    logger.debug(f'[Tenant Wiper] Validation time for {relationship_path} took {end_time - validation_time_start:.4f} seconds')
+    logger.debug(f'[Tenant Wiper] Validation time for {relationship_path} took {end_time - validation_time_start:.4f} seconds')  # noqa
     return errors
 
 
@@ -365,7 +412,7 @@ class TenantDeleter:
                 else:
                     return subquery.where(or_(*final_applicable_filters))
             else:
-                logger.error(f"Final table '{parsed_path['final_table']}' in path '{path_string}' cannot be filtered by any tenant filters!")
+                logger.error(f"Final table '{parsed_path['final_table']}' in path '{path_string}' cannot be filtered by any tenant filters!")  # noqa
         return None
 
     def _collect_pks_to_delete(self):
@@ -382,7 +429,7 @@ class TenantDeleter:
 
             pk_query = self._build_pk_collection_query(table)
             if pk_query is None:
-                raise ValueError(f'Table "{table.name}" found in metadata, but cannot find indirect relationship or applicable tenant filter')
+                raise ValueError(f'Table "{table.name}" found in metadata, but cannot find indirect relationship or applicable tenant filter')  # noqa
 
             primary_key_columns = list(table.primary_key.columns)
             if len(primary_key_columns) == 1:
@@ -442,7 +489,7 @@ class TenantDeleter:
     def delete(self, session: Session, dry_run: bool = False, commit: bool = False):
         """
         Delete tenant data using the configured settings.
-        
+
         Args:
             session: SQLAlchemy session
             dry_run: If True, only report what would be deleted

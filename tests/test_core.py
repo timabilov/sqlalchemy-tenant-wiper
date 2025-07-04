@@ -433,6 +433,79 @@ class TestTenantWiperConfig:
         # Should not raise exception
         config.validate()
 
+    def test_validate_tenant_filter_syntax_error(self, test_base, test_models):
+        """Test that tenant filter syntax errors are properly distinguished from missing column errors."""
+        test_uuid = uuid4()
+
+        # Filter with syntax error - trying to call invalid method
+        def syntax_error_filter(table):
+            return table.c.tenant_id.invalid_method()
+
+        # Filter that accesses non-existent column
+        def missing_column_filter(table):
+            return table.c.nonexistent_column == str(test_uuid)
+
+        # Filter that works correctly
+        def valid_filter(table):
+            return table.c.tenant_id == str(test_uuid)
+
+        # Test syntax error is caught and raised
+        config_syntax_error = TenantWiperConfig(
+            base=test_base,
+            tenant_filters=[syntax_error_filter],
+            excluded_tables=['audit_logs', 'products', 'product_orders'],
+            validate_on_init=False
+        )
+
+        with pytest.raises(ValueError, match='Filter.*error'):
+            config_syntax_error.validate()
+
+        # Test missing column is handled gracefully (no error, just no coverage)
+        config_missing_column = TenantWiperConfig(
+            base=test_base,
+            tenant_filters=[missing_column_filter],
+            excluded_tables=['audit_logs', 'products', 'product_orders'],
+            validate_on_init=False
+        )
+
+        # Should fail with coverage error (not syntax error)
+        with pytest.raises(ValueError, match='Tables without tenant deletion coverage'):
+            config_missing_column.validate()
+
+        # Test valid filter works
+        config_valid = TenantWiperConfig(
+            base=test_base,
+            tenant_filters=[valid_filter],
+            relationships=[
+                'product_orders__order_id=id__orders',
+                'products__id=product_id__product_orders__order_id=id__orders'
+            ],
+            excluded_tables=['audit_logs'],
+            validate_on_init=False
+        )
+
+        # Should not raise exception
+        config_valid.validate()
+
+    def test_validate_relationship_path_tenant_filter_syntax_error(self, test_base, test_models):
+        """Test that syntax errors in tenant filters are caught during relationship validation."""
+        # Filter with syntax error
+        def syntax_error_filter(table):
+            return table.c.tenant_id.invalid_method()
+
+        config = TenantWiperConfig(
+            base=test_base,
+            tenant_filters=[syntax_error_filter],
+            relationships=[
+                'product_orders__order_id=id__orders',  # Should fail when validating final table
+            ],
+            excluded_tables=['audit_logs', 'products'],
+            validate_on_init=False
+        )
+
+        with pytest.raises(ValueError, match='Filter.*error'):
+            config.validate()
+
 
 class TestJoinPathParsing:
     """Test relationship path parsing functionality."""

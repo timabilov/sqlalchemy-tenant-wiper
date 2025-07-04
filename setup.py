@@ -27,16 +27,16 @@ def get_version():
 setup(
     name='sqlalchemy-tenant-wiper',
     version=get_version(),
-    author='Your Name',
-    author_email='your.email@example.com',
+    author='Tim',
+    author_email='tim@skripe.com',
     description='A flexible SQLAlchemy-based library for tenant data deletion in multi-tenant applications',
     long_description=read_file('README.md'),
     long_description_content_type='text/markdown',
-    url='https://github.com/yourusername/sqlalchemy-tenant-wiper',
+    url='https://github.com/timabilov/sqlalchemy-tenant-wiper',
     project_urls={
-        'Bug Reports': 'https://github.com/yourusername/sqlalchemy-tenant-wiper/issues',
-        'Source': 'https://github.com/yourusername/sqlalchemy-tenant-wiper',
-        'Documentation': 'https://github.com/yourusername/sqlalchemy-tenant-wiper#readme',
+        'Bug Reports': 'https://github.com/timabilov/sqlalchemy-tenant-wiper/issues',
+        'Source': 'https://github.com/timabilov/sqlalchemy-tenant-wiper',
+        'Documentation': 'https://github.com/timabilov/sqlalchemy-tenant-wiper#readme',
     },
     packages=find_packages(exclude=['tests', 'tests.*']),
     classifiers=[
