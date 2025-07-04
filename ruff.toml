@@ -1,0 +1,55 @@
+line-length = 120
+
+exclude = [
+    "alembic",
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "alembic",
+    "node_modules",
+    "site-packages",
+    'local_debugger.py',
+    "venv",
+]
+
+[lint]
+ignore = ["D203","D100","D101","D400","D401","D106", "F403","F405","D403","D104","B008", "B023", "B904"]
+select = [
+    'E',
+    'B',
+    'I',
+    'F',
+    'W',
+    'A',
+    'Q'
+]
+
+[lint.pydocstyle]
+convention = "google"
+
+[format]
+quote-style = "double"
+
+[lint.flake8-quotes]
+docstring-quotes = "double"
+inline-quotes = "single"
