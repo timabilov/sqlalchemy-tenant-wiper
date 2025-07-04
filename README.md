@@ -41,6 +41,7 @@ from uuid import UUID
 config = TenantWiperConfig(
     base=YourSQLAlchemyBase,
     tenant_filters=[
+        # A record is targeted for deletion if it matches *any* of these simple conditions you provide.
         lambda table: table.c.tenant_id == your_tenant_uuid,
         lambda table: table.c.org_id.in_(your_org_uuids)
     ],
