@@ -457,7 +457,7 @@ class TestTenantWiperConfig:
             validate_on_init=False
         )
 
-        with pytest.raises(ValueError, match='Filter.*error'):
+        with pytest.raises(ValueError, match='Error on applying tenant filter'):
             config_syntax_error.validate()
 
         # Test missing column is handled gracefully (no error, just no coverage)
@@ -487,6 +487,45 @@ class TestTenantWiperConfig:
         # Should not raise exception
         config_valid.validate()
 
+    def test_validate_tenant_filter_error_on_expression_execute(self, test_session, test_base, test_models):
+        """Test tenant filter with error on compile/execution time"""
+        test_uuid = uuid4()
+
+        # Filter with syntax error - trying to call invalid method
+        def wrong_expression_compile(table):
+            return table.c.tenant_id == test_uuid  # different field type to compare
+
+        # Test syntax error is caught and raised
+        config_syntax_error = TenantWiperConfig(
+            base=test_base,
+            tenant_filters=[wrong_expression_compile],
+            excluded_tables=['audit_logs', 'products', 'product_orders'],
+            validate_on_init=False
+        )
+
+        # it should pass
+        config_syntax_error.validate()
+
+        deleter = TenantDeleter(config_syntax_error)
+        session, _ = test_session
+        initial_user_count = session.query(test_models['User']).count()
+        initial_order_count = session.query(test_models['Order']).count()
+
+        # Execute dry run
+        with pytest.raises(Exception, match='Error binding parameter'):
+            deleter.delete(session, dry_run=True, commit=False)
+
+        # Verify nothing was actually deleted
+        final_user_count = session.query(test_models['User']).count()
+        final_order_count = session.query(test_models['Order']).count()
+
+        assert final_user_count == initial_user_count
+        assert final_order_count == initial_order_count
+
+        # PKs should not be collected
+        assert len(deleter.pks_to_delete) == 0
+
+
     def test_validate_relationship_path_tenant_filter_syntax_error(self, test_base, test_models):
         """Test that syntax errors in tenant filters are caught during relationship validation."""
         # Filter with syntax error
@@ -503,7 +542,7 @@ class TestTenantWiperConfig:
             validate_on_init=False
         )
 
-        with pytest.raises(ValueError, match='Filter.*error'):
+        with pytest.raises(ValueError, match='Error on applying tenant filter'):
             config.validate()
 
 

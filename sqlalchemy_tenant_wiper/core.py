@@ -1,3 +1,4 @@
+import inspect
 import itertools
 import logging
 import pprint
@@ -7,13 +8,11 @@ from time import perf_counter
 from typing import Any, Callable, Dict, List, Optional, Set
 from unittest.mock import Mock
 
-from sqlalchemy import or_, select, tuple_
+from sqlalchemy import literal, or_, select, tuple_
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import Table
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 class ColumnRecorder:
     """Records column access for tenant filter validation."""
@@ -72,6 +71,7 @@ class TenantWiperConfig:
 
     def validate(self) -> None:
         """Validate configuration for correctness."""
+        logger.info('[Tenant Wiper] Validating table declarations and configuration...')
         metadata = self.base.metadata
         excluded_tables_set = set(self.excluded_tables)
         relationship_errors = []
@@ -105,7 +105,7 @@ class TenantWiperConfig:
                 logging.info(f'[Tenant Wiper] Skipped "{table_name}" because in excluded table set')
                 continue
 
-            has_tenant_filter = self._has_tenant_filter(table)
+            has_tenant_filter = self._has_tenant_column(table)
             if has_tenant_filter:
                 implicit_direct_relationships += 1
 
@@ -131,7 +131,7 @@ class TenantWiperConfig:
             f'\n  {len(excluded_tables_set)} tables explicitly excluded.'
         )
 
-    def _has_tenant_filter(self, table: Table) -> bool:
+    def _has_tenant_column(self, table: Table) -> bool:
         """Check if any tenant filter can be applied to this table."""
         for tenant_filter in self.tenant_filters:
             try:
@@ -219,7 +219,7 @@ def _get_all_columns_for_table(table_name: str, metadata, base) -> Set[str]:
     return set()
 
 
-def _can_apply_tenant_filter(table: Table, tenant_filter) -> bool:
+def _can_apply_tenant_filter(table: Table, tenant_filter: Callable[[Table], Any]) -> bool:
     """
     Check if table can be filtered by the given tenant filter directly.
 
@@ -247,15 +247,26 @@ def _can_apply_tenant_filter(table: Table, tenant_filter) -> bool:
     if missing_columns:
         return False  # Table doesn't have required columns
 
-    # Run with real table to catch SQLAlchemy DSL errors
+    # If we have column, try another validation to ensure safe execution pre deletion
     try:
-        tenant_filter(table)
-        return True  # Filter works correctly
+        filter_expression = tenant_filter(table)
+        dummy_query = select(literal(1)).select_from(table).where(filter_expression)
+        logger.info(f"[Tenant Wiper] [Filter] '{table.name}' compiled filter: {filter_expression} sql: {dummy_query}")
+        # We use a generic dialect for this.
+        dummy_query.compile()
+        return True  # we validated what we could here, maybe add session execute() to ensure it works in context
     except Exception as e:
-        raise ValueError(f'Filter expression error for table {table.name}: {e}')
+        try:
+            # lambda/fn source code for better error reporting
+            filter_source = inspect.getsource(tenant_filter).strip()
+        except TypeError:
+            filter_source = '<Unknown tenant filter function>'
+
+        raise ValueError(f"Table '{table.name}': Error on applying tenant filter:\n{filter_source}. \nPlease check your tenant filter table compatibility or fix it: {e}")  # noqa
 
 
-def _validate_relationship_path(relationship_path: str, metadata, tenant_filters=None) -> List[str]:
+def _validate_relationship_path(relationship_path: str, metadata,
+                                tenant_filters: Optional[List[Callable[[Table], Any]]]=None) -> List[str]:
     """
     Validate that all tables and columns referenced in a relationship path actually exist.
     Returns list of validation errors, empty list if valid.
@@ -370,10 +381,7 @@ class TenantDeleter:
         # Case 2: Table is indirectly related, use the relationship config
         elif table.name in self.config._relationship_dict:
             path_string = self.config._relationship_dict[table.name]
-            path_errors = _validate_relationship_path(path_string, self.metadata)
-
-            if path_errors:
-                raise ValueError(path_errors)
+            logger.debug(f"[Tenant Deleter] [Collect] '{table.name}' using relationship path: {path_string}")
             try:
                 parsed_path = _parse_join_path(path_string)
             except ValueError as e:
@@ -437,14 +445,17 @@ class TenantDeleter:
             else:
                 # For composite keys, select all primary key columns as tuple
                 primary_selection = primary_key_columns
-
-            # Handle composite primary keys in result processing
-            if isinstance(primary_selection, list):
-                # For composite keys, we get tuples
-                pks = [tuple(row) for row in self.session.execute(pk_query).all()]
-            else:
-                # For single primary key, we get scalars
-                pks = self.session.execute(pk_query).scalars().all()
+            try:
+                # Handle composite primary keys in result processing
+                if isinstance(primary_selection, list):
+                    # For composite keys, we get tuples
+                    pks = [tuple(row) for row in self.session.execute(pk_query).all()]
+                else:
+                    # For single primary key, we get scalars
+                    pks = self.session.execute(pk_query).scalars().all()
+            except Exception as e:
+                logger.error(f"[Tenant Deleter] [Collect] '{table.name}' SQL Execute error: {e}")
+                raise
             logger.debug(f"[Tenant Deleter] [Collect] '{table.name}' PK query: {pk_query}")
             if pks:
                 logger.info(f"[Tenant Deleter] [Collect] '{table.name}' Found {len(pks)} PKs to delete ")
