@@ -45,6 +45,10 @@ config = TenantWiperConfig(
         lambda table: table.c.org_id.in_(your_org_uuids)
     ],
     relationships=[
+        # tables with 'tenant_id' or 'org_id' column doesn't require declaration 
+        # and explicitly added for removal
+
+        # <table_name>__<from_key>=<to_key>__<to_table_name>...
         'products__id=product_id__order_items__order_id=id__orders'
     ],
     excluded_tables=['audit_logs', 'system_logs'],
@@ -103,6 +107,7 @@ config = TenantWiperConfig(
         lambda table: table.c.tenant_id == str(tenant_uuid)
     ],
     relationships=[
+        # <table_name>__<from_key>=<to_key>__<to_table_name>...
         # Products -> OrderItems -> Orders (with tenant_id)
         'products__id=product_id__order_items__order_id=id__orders',
         
