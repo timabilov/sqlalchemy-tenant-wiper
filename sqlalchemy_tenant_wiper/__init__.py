@@ -1,6 +1,6 @@
 """SQLAlchemy Tenant Wiper - A flexible library for tenant data deletion in SaaS applications."""
 
-__version__ = '0.1.3'
+__version__ = '0.1.4'
 __author__ = 'Tim'
 __email__ = 'tim@skripe.com'
 

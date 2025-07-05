@@ -408,7 +408,7 @@ class TestTenantWiperConfig:
             validate_on_init=False
         )
 
-        with pytest.raises(ValueError, match='cannot be filtered by any tenant filters'):
+        with pytest.raises(ValueError, match='cannot be filtered by any tenant filters.*tenant_id'):
             config.validate()
 
     def test_validate_success_relationship_final_table_column_check(self, test_base, test_models):

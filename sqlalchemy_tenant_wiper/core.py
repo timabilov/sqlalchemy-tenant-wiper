@@ -1,3 +1,4 @@
+from copy import copy
 import inspect
 import itertools
 import logging
@@ -23,6 +24,25 @@ class ColumnRecorder:
     def __getattr__(self, column_name):
         self.accessed_columns.add(column_name)
         return Mock()  # Return mock for any method calls (in_, ==, etc.)
+
+class TableProxy:
+    """
+    A proxy for a SQLAlchemy Table.
+
+    It intercepts access to the '.c' attribute to return a ColumnRecorder,
+    but passes all other attribute access through to the real table.
+    """
+    def __init__(self, real_table):
+        self._real_table = real_table
+        # Instead of replacing .c on the real table, we create our own .c
+        # that points to our recorder.
+        self.c = ColumnRecorder()
+
+    def __getattr__(self, name):
+        return getattr(self._real_table, name)
+
+    def __repr__(self):
+        return f"<TableProxy for {self._real_table.name}>"
 
 
 class TenantWiperConfig:
@@ -233,7 +253,7 @@ def _can_apply_tenant_filter(table: Table, tenant_filter: Callable[[Table], Any]
     """
     # Record column access with mock
     recorder = ColumnRecorder()
-    mock_table = Mock()
+    mock_table = TableProxy(table)
     mock_table.c = recorder
 
     try:
@@ -329,7 +349,7 @@ def _validate_relationship_path(relationship_path: str, metadata,
                 f"Final table '{final_table_name}' in path '{relationship_path}' "
                 f"cannot be filtered by any tenant filters. The final table in a relationship "
                 f"path must have columns ({' or '.join(map(str, accessed_columns_pairs))}) "
-                "that match the tenant filters."
+                f"that match the tenant filters. Available columns: {final_table.columns.keys()}"
             )
 
     end_time = perf_counter()
