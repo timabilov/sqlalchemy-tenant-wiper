@@ -111,7 +111,7 @@ class TenantWiperConfig:
 
             if has_tenant_filter and table_name in self._relationship_dict:
                 logger.warning(
-                    f"Table '{table_name}' can be filtered by tenant filters "
+                    f"Table '{table_name}' can be directly filtered by tenant filters "
                     f"but also has an entry in relationships. "
                     f"Please remove it from relationships."
                 )
@@ -120,7 +120,8 @@ class TenantWiperConfig:
                 tables_with_no_coverage.append(table_name)
 
         if tables_with_no_coverage:
-            error_msg = f'Tables without tenant deletion coverage: {tables_with_no_coverage}'
+            error_msg = f'Cannot apply tenant filter: The following tables lack the necessary tenant columns'\
+                        f' or a defined relationship path to tenant source (e.g., "table__from_pk=to_pk__tenantsrc): {tables_with_no_coverage}'  # noqa
             pprint.pprint(self._relationship_dict)
             raise ValueError(error_msg)
 
