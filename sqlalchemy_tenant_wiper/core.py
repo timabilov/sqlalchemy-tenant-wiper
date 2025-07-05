@@ -5,7 +5,7 @@ import pprint
 import traceback
 from collections import defaultdict
 from time import perf_counter
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from unittest.mock import Mock
 
 from sqlalchemy import literal, or_, select, tuple_
@@ -136,7 +136,8 @@ class TenantWiperConfig:
         """Check if any tenant filter can be applied to this table."""
         for tenant_filter in self.tenant_filters:
             try:
-                if _can_apply_tenant_filter(table, tenant_filter):
+                can_apply, _ = _can_apply_tenant_filter(table, tenant_filter)
+                if can_apply:
                     return True
             except ValueError:
                 # Syntax error - re-raise to surface the issue
@@ -220,13 +221,12 @@ def _get_all_columns_for_table(table_name: str, metadata, base) -> Set[str]:
     return set()
 
 
-def _can_apply_tenant_filter(table: Table, tenant_filter: Callable[[Table], Any]) -> bool:
+def _can_apply_tenant_filter(table: Table, tenant_filter: Callable[[Table], Any]) -> Tuple[bool, Set[str]]:
     """
     Check if table can be filtered by the given tenant filter directly.
 
     Returns:
-        True: Filter can be applied successfully
-        False: Filter cannot be applied due to missing columns
+        bool, Set[str]: True if filter can be applied, and a set of accessed columns.
 
     Raises:
         ValueError: Filter has syntax/expression errors
@@ -246,7 +246,7 @@ def _can_apply_tenant_filter(table: Table, tenant_filter: Callable[[Table], Any]
     missing_columns = [col for col in recorder.accessed_columns
                      if col not in table.c]
     if missing_columns:
-        return False  # Table doesn't have required columns
+        return False, recorder.accessed_columns  # Table doesn't have required columns
 
     # If we have column, try another validation to ensure safe execution pre deletion
     try:
@@ -255,7 +255,8 @@ def _can_apply_tenant_filter(table: Table, tenant_filter: Callable[[Table], Any]
         logger.debug(f"[Tenant Wiper] [Filter] '{table.name}' compiled filter: {filter_expression} sql: {dummy_query}")
         # We use a generic dialect for this.
         dummy_query.compile()
-        return True  # we validated what we could here, maybe add session execute() to ensure it works in context
+        # we validated what we could here, maybe add session execute() to ensure it works in context
+        return True, recorder.accessed_columns
     except Exception as e:
         try:
             # lambda/fn source code for better error reporting
@@ -310,10 +311,13 @@ def _validate_relationship_path(relationship_path: str, metadata,
         final_table = metadata_tables[final_table_name]
 
         # Check if any tenant filter can be applied to the final table
+        accessed_columns_pairs = list()
         can_filter_final_table = False
         for tenant_filter in tenant_filters:
             try:
-                if _can_apply_tenant_filter(final_table, tenant_filter):
+                can_apply, accessed_columns = _can_apply_tenant_filter(final_table, tenant_filter)
+                accessed_columns_pairs.append(list(accessed_columns))  # Use frozenset for immutability in set
+                if can_apply:
                     can_filter_final_table = True
                     break
             except ValueError:
@@ -324,7 +328,8 @@ def _validate_relationship_path(relationship_path: str, metadata,
             errors.append(
                 f"Final table '{final_table_name}' in path '{relationship_path}' "
                 f"cannot be filtered by any tenant filters. The final table in a relationship "
-                f"path must have columns that match the tenant filters."
+                f"path must have columns ({' or '.join(map(str, accessed_columns_pairs))}) "
+                "that match the tenant filters."
             )
 
     end_time = perf_counter()

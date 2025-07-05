@@ -199,7 +199,7 @@ class TestTenantWiperConfig:
             validate_on_init=False
         )
 
-        with pytest.raises(ValueError, match="Tables without tenant deletion coverage.*'products'"):
+        with pytest.raises(ValueError, match="The following tables lack the necessary tenant columns or a defined relationship path to tenant source .*'products'"):  # noqa
             config.validate()
 
     def test_validate_fail_malformed_relationship_syntax(self, test_base, test_models):
@@ -364,7 +364,7 @@ class TestTenantWiperConfig:
         ]
 
         # This should fail during __init__ because validate_on_init=True (default)
-        with pytest.raises(ValueError, match='Tables without tenant deletion coverage'):
+        with pytest.raises(ValueError, match='The following tables lack the necessary tenant columns or a defined relationship path to tenant source '):  # noqa
             TenantWiperConfig(
                 base=test_base,
                 tenant_filters=tenant_filters,
@@ -387,7 +387,7 @@ class TestTenantWiperConfig:
         )
 
         # Should fail because no tables have coverage
-        with pytest.raises(ValueError, match='Tables without tenant deletion coverage'):
+        with pytest.raises(ValueError, match='The following tables lack the necessary tenant columns or a defined relationship path to tenant source '):  # noqa
             config.validate()
 
     def test_validate_fail_relationship_final_table_column_check(self, test_base, test_models):
@@ -469,7 +469,7 @@ class TestTenantWiperConfig:
         )
 
         # Should fail with coverage error (not syntax error)
-        with pytest.raises(ValueError, match='Tables without tenant deletion coverage'):
+        with pytest.raises(ValueError, match='The following tables lack the necessary tenant columns or a defined relationship path to tenant source '):   #noqa
             config_missing_column.validate()
 
         # Test valid filter works
