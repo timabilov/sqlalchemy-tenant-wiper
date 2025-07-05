@@ -252,7 +252,7 @@ def _can_apply_tenant_filter(table: Table, tenant_filter: Callable[[Table], Any]
     try:
         filter_expression = tenant_filter(table)
         dummy_query = select(literal(1)).select_from(table).where(filter_expression)
-        logger.info(f"[Tenant Wiper] [Filter] '{table.name}' compiled filter: {filter_expression} sql: {dummy_query}")
+        logger.debug(f"[Tenant Wiper] [Filter] '{table.name}' compiled filter: {filter_expression} sql: {dummy_query}")
         # We use a generic dialect for this.
         dummy_query.compile()
         return True  # we validated what we could here, maybe add session execute() to ensure it works in context
