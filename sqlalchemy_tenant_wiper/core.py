@@ -133,7 +133,7 @@ class TenantWiperConfig:
                 logger.warning(
                     f"Table '{table_name}' can be directly filtered by tenant filters "
                     f"but also has an entry in relationships. "
-                    f"Please remove it from relationships."
+                    f"Please ensure this is intentional."
                 )
 
             if not has_tenant_filter and table_name not in self._relationship_dict:
