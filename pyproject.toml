@@ -4,14 +4,14 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "sqlalchemy-tenant-wiper"
-version = "0.1.5"
+version = "0.1.6"
 description = "A flexible SQLAlchemy-based library for tenant data deletion in multi-tenant applications"
 authors = ["Your Name <your.email@example.com>"]
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/yourusername/sqlalchemy-tenant-wiper"
-repository = "https://github.com/yourusername/sqlalchemy-tenant-wiper"
-documentation = "https://github.com/yourusername/sqlalchemy-tenant-wiper#readme"
+homepage = "https://github.com/timabilov/sqlalchemy-tenant-wiper"
+repository = "https://github.com/timabilov/sqlalchemy-tenant-wiper"
+documentation = "https://github.com/timabilov/sqlalchemy-tenant-wiper#readme"
 keywords = ["sqlalchemy", "tenant", "multi-tenant", "database", "deletion", "cleanup"]
 classifiers = [
     "Development Status :: 4 - Beta",
