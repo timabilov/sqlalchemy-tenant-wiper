@@ -1,6 +1,6 @@
 # SQLAlchemy Tenant Wiper
 
-A flexible SQLAlchemy-based library for tenant data deletion in multi-tenant applications. Supports custom SQLAlchemy Base configurations, dynamic tenant filtering using lambda expressions, and handles complex relationship paths with robust validations.
+A flexible SQLAlchemy-based library for tenant data deletion in multi-tenant applications. Supports custom dynamic tenant column filtering using lambda expressions, robust validations and handles complex relationship paths for tables without explicit tenant knowledge
 
 [![PyPI version](https://badge.fury.io/py/sqlalchemy-tenant-wiper.svg)](https://badge.fury.io/py/sqlalchemy-tenant-wiper)
 [![Python Support](https://img.shields.io/pypi/pyversions/sqlalchemy-tenant-wiper.svg)](https://pypi.org/project/sqlalchemy-tenant-wiper/)
