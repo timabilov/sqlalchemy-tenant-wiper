@@ -52,7 +52,7 @@ class TenantWiperConfig:
         self,
         base,
         tenant_filters: Optional[List[Callable[[Table], Any]]] = None,
-        relationships: Optional[List[str]] = None,
+        tenant_join_paths: Optional[List[str]] = None,
         excluded_tables: Optional[List[str]] = None,
         validate_on_init: bool = True,
         batch_size: Optional[int] = 500
@@ -63,13 +63,13 @@ class TenantWiperConfig:
         Args:
             base: SQLAlchemy declarative Base
             tenant_filters: List of lambda expressions for tenant filtering
-            relationships: List of relationship path strings
+            tenant_join_paths:  Defines explicit join paths for tables that indirectly belong to a tenant.
             excluded_tables: List of table names to exclude from deletion
             validate_on_init: Whether to validate configuration on initialization
         """
         self.base = base
         self.tenant_filters = tenant_filters if tenant_filters is not None else []
-        self.relationships = relationships if relationships is not None else []
+        self.relationships = tenant_join_paths if tenant_join_paths is not None else []
         self.excluded_tables = excluded_tables if excluded_tables is not None else []
         self.validate_on_init = validate_on_init
         self.batch_size = batch_size
@@ -502,10 +502,10 @@ class TenantDeleter:
             if table.name in self.pks_to_delete:
                 pks = list(self.pks_to_delete[table.name])
                 if not pks or len(pks) == 0:
-                    logger.info(f"[Execute] Deleting 0 rows from '{table.name}'")
+                    logger.info(f"[Tenant Deleter] [Execute] Deleting 0 rows from '{table.name}'")
                     continue
 
-                logger.debug(f"[Execute] Deleting {[str(pk)[10:] for pk in pks if pk]} rows from '{table.name}'")
+                logger.info(f"[Tenant Deleter] [Execute] Deleting {len(pks)} rows from '{table.name}'")
                 primary_key_columns = list(table.primary_key.columns)
 
 

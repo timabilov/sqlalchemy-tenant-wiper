@@ -170,7 +170,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=tenant_filters,
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
@@ -191,7 +191,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=tenant_filters,
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders',
                 # Missing 'products' relationship - should fail
             ],
@@ -222,7 +222,7 @@ class TestTenantWiperConfig:
             config = TenantWiperConfig(
                 base=test_base,
                 tenant_filters=tenant_filters,
-                relationships=[malformed_rel],
+                tenant_join_paths=[malformed_rel],
                 excluded_tables=['audit_logs', 'products', 'product_orders'],
                 validate_on_init=False
             )
@@ -240,7 +240,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=tenant_filters,
-            relationships=[
+            tenant_join_paths=[
                 'nonexistent_table__id=fk__orders',  # Non-existent source table
                 'products__id=fk__nonexistent_target',  # Non-existent target table
             ],
@@ -261,7 +261,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=tenant_filters,
-            relationships=[
+            tenant_join_paths=[
                 'products__nonexistent_col=id__orders',  # Non-existent from column
                 'products__id=nonexistent_col__orders',  # Non-existent to column
             ],
@@ -283,7 +283,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=tenant_filters,
-            relationships=[
+            tenant_join_paths=[
                 'products__id=product_id__product_orders__order_id=id__orders',
                 'product_orders__product_id=id__products',  # Leads to products (no tenant filter)
             ],
@@ -304,7 +304,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=tenant_filters,
-            relationships=[
+            tenant_join_paths=[
                 'audit_logs__user_id=id__users',  # audit_logs is also in excluded
             ],
             excluded_tables=['audit_logs'],  # Same table in excluded
@@ -325,7 +325,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=tenant_filters,
-            relationships=[
+            tenant_join_paths=[
                 'products__id=product_id__product_orders__order_id=user_id__users',  # Wrong column
             ],
             excluded_tables=['audit_logs'],
@@ -345,7 +345,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=tenant_filters,
-            relationships=[
+            tenant_join_paths=[
                 # Complex path with wrong column in the middle
                 'products__id=product_id__product_orders__wrong_column=id__orders',
             ],
@@ -368,7 +368,7 @@ class TestTenantWiperConfig:
             TenantWiperConfig(
                 base=test_base,
                 tenant_filters=tenant_filters,
-                relationships=[
+                tenant_join_paths=[
                     'product_orders__order_id=id__orders',
                     # Missing 'products' relationship
                 ],
@@ -381,7 +381,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=[],  # No filters
-            relationships=[],   # No relationships
+            tenant_join_paths=[],   # No relationships
             excluded_tables=[], # No exclusions
             validate_on_init=False
         )
@@ -401,7 +401,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=tenant_filters,
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__product_id=id__products',  # Final table 'products' has no tenant_id
             ],
             excluded_tables=['audit_logs'],
@@ -422,7 +422,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=tenant_filters,
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders',  # Final table 'orders' has tenant_id
                 'products__id=product_id__product_orders__order_id=id__orders'  # Final table 'orders' has tenant_id
             ],
@@ -476,7 +476,7 @@ class TestTenantWiperConfig:
         config_valid = TenantWiperConfig(
             base=test_base,
             tenant_filters=[valid_filter],
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
@@ -535,7 +535,7 @@ class TestTenantWiperConfig:
         config = TenantWiperConfig(
             base=test_base,
             tenant_filters=[syntax_error_filter],
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders',  # Should fail when validating final table
             ],
             excluded_tables=['audit_logs', 'products'],
@@ -663,7 +663,7 @@ class TestRealDataScenarios:
             tenant_filters=[
                 lambda table: table.c.tenant_id == target_tenant_id
             ],
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
@@ -705,7 +705,7 @@ class TestRealDataScenarios:
             tenant_filters=[
                 lambda table: table.c.tenant_id == target_tenant_id
             ],
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
@@ -748,7 +748,7 @@ class TestRealDataScenarios:
             tenant_filters=[
                 lambda table: table.c.tenant_id == target_tenant_id
             ],
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders'
             ],
             excluded_tables=['audit_logs', 'products'],  # Keep products for this test
@@ -779,7 +779,7 @@ class TestRealDataScenarios:
             tenant_filters=[
                 lambda table: table.c.tenant_id == target_tenant_id
             ],
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders'
             ],
             excluded_tables=['audit_logs', 'products'],
@@ -815,7 +815,7 @@ class TestRealDataScenarios:
                 lambda table: table.c.tenant_id == target_tenant_id,
                 lambda table: table.c.org_id == target_org_id,
             ],
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
@@ -850,7 +850,7 @@ class TestRealDataScenarios:
             tenant_filters=[
                 lambda table: table.c.tenant_id == target_tenant_id
             ],
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
@@ -880,7 +880,7 @@ class TestRealDataScenarios:
             tenant_filters=[
                 lambda table: table.c.tenant_id == target_tenant_id
             ],
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
@@ -916,7 +916,7 @@ class TestMockedScenarios:
             tenant_filters=[
                 lambda table: table.c.tenant_id == target_tenant_id
             ],
-            relationships=[
+            tenant_join_paths=[
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],

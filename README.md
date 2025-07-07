@@ -8,11 +8,10 @@ A flexible SQLAlchemy-based library for tenant data deletion in multi-tenant app
 
 ## Features
 
-- **Flexible Base Configuration**: Works with any SQLAlchemy declarative Base
 - **Dynamic Tenant Filtering**: Lambda expressions adapt to each table's columns
-- **Relationship Path Support**: Handle indirect tenant relationships through join paths
+- **Relationship Path Support**: Declare relationships for tables that indirectly belong to a tenants (See below)
 - **Composite Primary Key Support**: Properly handles tables with composite primary keys
-- **Configuration-Time Validation**: Comprehensive validation at config creation
+- **Configuration-Time Validation**: Comprehensive runtime validation at table & column level
 - **Two-Phase Deletion**: Safe deletion order respecting foreign key constraints
 - **Dry Run Mode**: Preview what would be deleted before execution
 - **Batched Deletions**: Efficient deletion in configurable batch sizes
@@ -45,7 +44,7 @@ config = TenantWiperConfig(
         lambda table: table.c.tenant_id == your_tenant_uuid,
         lambda table: table.c.org_id.in_(your_org_uuids)
     ],
-    relationships=[
+    tenant_join_paths=[
         # tables with 'tenant_id' or 'org_id' column doesn't require declaration 
         # and explicitly added for removal
 
@@ -107,7 +106,7 @@ config = TenantWiperConfig(
     tenant_filters=[
         lambda table: table.c.tenant_id == str(tenant_uuid)
     ],
-    relationships=[
+    tenant_join_paths=[
         # <table_name>__<from_key>=<to_key>__<to_table_name>...
         # Products -> OrderItems -> Orders (with tenant_id)
         'products__id=product_id__order_items__order_id=id__orders',
@@ -128,7 +127,7 @@ config = TenantWiperConfig(
 config = TenantWiperConfig(
     base=Base,
     tenant_filters=[...],
-    relationships=[...],
+    tenant_join_paths=[...],
     validate_on_init=True  # Default: validates on creation
 )
 
@@ -160,7 +159,7 @@ config = TenantWiperConfig(
 |-----------|------|-------------|
 | `base` | SQLAlchemy Base | Your declarative base class |
 | `tenant_filters` | `List[Callable[[Table], Any]]` | Lambda functions for tenant filtering |
-| `relationships` | `List[str]` | Relationship path strings for indirect tables |
+| `tenant_join_paths` | `List[str]` | Relationship path strings for indirect tables |
 | `excluded_tables` | `List[str]` | Table names to exclude from deletion |
 | `validate_on_init` | `bool` | Whether to validate config on creation (default: True) |
 
