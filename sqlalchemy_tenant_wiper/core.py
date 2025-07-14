@@ -8,12 +8,11 @@ from time import perf_counter
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from unittest.mock import Mock
 
-from sqlalchemy import literal, or_, select, tuple_
+from sqlalchemy import literal, or_, select, tuple_, union
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import Table
 
 logger = logging.getLogger(__name__)
-
 class ColumnRecorder:
     """Records column access for tenant filter validation."""
 
@@ -378,43 +377,37 @@ class TenantDeleter:
     def _build_pk_collection_query(self, table: Table) -> Optional[Any]:
         """
         Builds a query to SELECT the primary keys of rows to be deleted for a given table.
+        Treats direct tenant filters as zero-step paths, unifying all logic.
         """
         if not table.primary_key:
             logger.warning(f"Table '{table.name}' has no primary key, cannot collect PKs.")
             raise ValueError(f"Table '{table.name}' has no primary key, cannot collect PKs.")
 
         primary_key_columns = list(table.primary_key.columns)
-        # For composite primary keys, select all columns; for single, just the one
         if len(primary_key_columns) == 1:
             primary_selection = primary_key_columns[0]
         else:
-            # For composite keys, select all primary key columns as tuple
             primary_selection = primary_key_columns
 
-        # Case 1: Table can be filtered by tenant filters
-        applicable_filters = []
+        all_queries = []
+
+        # Add direct tenant filters as basic select query
         for tenant_filter in self.config.tenant_filters:
             try:
                 filter_expr = tenant_filter(table)
-                applicable_filters.append(filter_expr)
+                if isinstance(primary_selection, list):
+                    query = select(*primary_selection).where(filter_expr)
+                else:
+                    query = select(primary_selection).where(filter_expr)
+                all_queries.append(query)
             except (AttributeError, KeyError):
-                # Filter doesn't apply to this table
                 continue
 
-        if applicable_filters:
-            query = select(*primary_selection) if isinstance(primary_selection, list) else select(primary_selection)
-            if len(applicable_filters) == 1:
-                return query.where(applicable_filters[0])
-            else:
-                return query.where(or_(*applicable_filters))
-
-        # Case 2: Table is indirectly related, use the relationship config
-        elif table.name in self.config._relationship_dict:
+        # Add relationship paths as join queries based on declared relationships config
+        if table.name in self.config._relationship_dict:
             path_strings = self.config._relationship_dict[table.name]
             logger.debug(f"[Tenant Deleter] [Collect] '{table.name}' using relationship paths: {path_strings}")
 
-            # Collect queries for all paths (OR logic)
-            path_queries = []
             for path_string in path_strings:
                 try:
                     parsed_path = _parse_join_path(path_string)
@@ -440,35 +433,33 @@ class TenantDeleter:
                         join_string += '-> '
                 logger.info(f"[Tenant Deleter] [Collect] '{table.name}' path:  " + join_string)
 
-                final_table = self.metadata.tables[parsed_path['final_table']]
-
                 # Apply tenant filters to final table
-                final_applicable_filters = []
+                final_table = self.metadata.tables[parsed_path['final_table']]
+                final_filters = []
                 for tenant_filter in self.config.tenant_filters:
                     try:
                         filter_expr = tenant_filter(final_table)
-                        final_applicable_filters.append(filter_expr)
+                        final_filters.append(filter_expr)
                     except (AttributeError, KeyError):
                         continue
 
-                if final_applicable_filters:
-                    if len(final_applicable_filters) == 1:
-                        path_queries.append(subquery.where(final_applicable_filters[0]))
+                if final_filters:
+                    if len(final_filters) == 1:
+                        all_queries.append(subquery.where(final_filters[0]))
                     else:
-                        path_queries.append(subquery.where(or_(*final_applicable_filters)))
+                        all_queries.append(subquery.where(or_(*final_filters)))
                 else:
-                    logger.error(f"Final table '{parsed_path['final_table']}' in path '{path_string}' cannot be filtered by any tenant filters!")  # noqa
+                    logger.error(
+                        f"Final table '{parsed_path['final_table']}' in path '{path_string}' "
+                        f"cannot be filtered by any tenant filters!"
+                    )
 
-            # If we have multiple valid path queries, combine them with UNION
-            print(f"[Tenant Deleter] [Collect] '{table.name}' found {len(path_queries)} valid relationship paths")
-            if len(path_queries) == 1:
-                return path_queries[0]
-            elif len(path_queries) > 1:
-                # Use UNION to combine all path queries (OR logic)
-                return path_queries[0].union(*path_queries[1:])
-            else:
-                logger.error(f"No valid relationship paths found for table '{table.name}'")
-                return None
+        # Combine all queries with UNION
+        if len(all_queries) == 1:
+            return all_queries[0]
+        elif len(all_queries) > 1:
+            return union(*all_queries)
+
         return None
 
     def _collect_pks_to_delete(self):

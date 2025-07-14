@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session, declarative_base, relationship
 
 from sqlalchemy_tenant_wiper.core import TenantDeleter, TenantWiperConfig, _parse_join_path
 
+logging.getLogger().setLevel(logging.DEBUG)
 
 # Test fixtures and models
 @pytest.fixture
@@ -733,6 +735,40 @@ class TestRealDataScenarios:
         # Audit logs should be untouched (excluded)
         assert len(remaining_audits) == 2
 
+    def test_tenant_deletion_direct_no_join_explicit(self, test_session, test_base, test_models):
+        """Test complete tenant deletion workflow with direct reference."""
+        session, tenant_data = test_session
+        target_tenant_id = tenant_data['target_tenant_id']
+        other_tenant_id = tenant_data['other_tenant_id']
+
+        # Create deletion config - need relationships for indirect tables
+        config = TenantWiperConfig(
+            base=test_base,
+            tenant_filters=[
+                lambda table: table.c.tenant_id == target_tenant_id
+            ],
+            tenant_join_paths=[
+                'orders',
+                'orders__user_id=id__users',
+            ],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies',
+                             'products', 'product_orders'],
+            validate_on_init=True
+        )
+
+        deleter = TenantDeleter(config)
+
+        # Execute deletion
+        deleter.delete(session, dry_run=False, commit=True)
+
+        # Verify target tenant data is deleted
+        remaining_users = session.query(test_models['User']).all()
+
+        # Should only have other tenant data remaining
+        assert len(remaining_users) == 1
+        assert remaining_users[0].tenant_id == other_tenant_id
+
+
     def test_dry_run_reports_correctly(self, test_session, test_base, test_models):
         """Test dry run reports what would be deleted without actually deleting."""
         session, tenant_data = test_session
@@ -986,7 +1022,7 @@ class TestMultipleRelationshipPaths:
     """Test scenarios with multiple relationship paths to the same table."""
 
     def test_table_with_multiple_relationship_paths_current_behavior(self, test_session, test_base, test_models):
-        """Test current behavior - only one path is used when multiple paths exist."""
+        """Test current behavior - both path are used."""
         session, tenant_data = test_session
         target_tenant_id = tenant_data['target_tenant_id']
 
@@ -1004,7 +1040,7 @@ class TestMultipleRelationshipPaths:
             validate_on_init=False
         )
 
-        # Verify only one path is stored (the last one)
+        # Both paths should be valid, but only one table will be stored
         assert len(config._relationship_dict) == 1
         assert config._relationship_dict['employees'] == [
             'employees__company_id=id__companies',
