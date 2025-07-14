@@ -1,4 +1,3 @@
-from copy import copy
 import inspect
 import itertools
 import logging
@@ -42,7 +41,7 @@ class TableProxy:
         return getattr(self._real_table, name)
 
     def __repr__(self):
-        return f"<TableProxy for {self._real_table.name}>"
+        return f'<TableProxy for {self._real_table.name}>'
 
 
 class TenantWiperConfig:
@@ -75,17 +74,19 @@ class TenantWiperConfig:
         self.batch_size = batch_size
 
         # Parse relationships into lookup dict
-        self._relationship_dict = self._parse_relationships()
+        self._relationship_dict: Dict[str, List[str]] = self._parse_relationships()
 
         if self.validate_on_init:
             self.validate()
 
-    def _parse_relationships(self) -> Dict[str, str]:
-        """Parse relationship config into lookup dict."""
+    def _parse_relationships(self) -> Dict[str, List[str]]:
+        """Parse relationship config into lookup dict with multiple paths per table."""
         relationship_dict = {}
         for relationship_str in self.relationships:
             source_table = relationship_str.split('__', 1)[0]
-            relationship_dict[source_table] = relationship_str
+            if source_table not in relationship_dict:
+                relationship_dict[source_table] = []
+            relationship_dict[source_table].append(relationship_str)
         return relationship_dict
 
 
@@ -97,19 +98,22 @@ class TenantWiperConfig:
         relationship_errors = []
 
         # Validate relationship paths
-        for source_table, relationship_path in self._relationship_dict.items():
+        for source_table, relationship_paths in self._relationship_dict.items():
             if source_table in excluded_tables_set:
                 relationship_errors.append(
                     f"Configuration Error: Table '{source_table}' is listed in both "
                     f"excluded_tables and relationships."
                 )
                 continue
-            path_errors = _validate_relationship_path(relationship_path, metadata, self.tenant_filters)
-            if path_errors:
-                relationship_errors.extend([
-                    f"Relationship '{source_table}': {error}"
-                    for error in path_errors
-                ])
+
+            # Validate all paths for this table
+            for relationship_path in relationship_paths:
+                path_errors = _validate_relationship_path(relationship_path, metadata, self.tenant_filters)
+                if path_errors:
+                    relationship_errors.extend([
+                        f"Relationship '{source_table}' path '{relationship_path}': {error}"
+                        for error in path_errors
+                    ])
         if relationship_errors:
             error_msg = 'Relationship path validation errors:\n' + '\n'.join(relationship_errors)
             raise ValueError(error_msg)
@@ -406,47 +410,65 @@ class TenantDeleter:
 
         # Case 2: Table is indirectly related, use the relationship config
         elif table.name in self.config._relationship_dict:
-            path_string = self.config._relationship_dict[table.name]
-            logger.debug(f"[Tenant Deleter] [Collect] '{table.name}' using relationship path: {path_string}")
-            try:
-                parsed_path = _parse_join_path(path_string)
-            except ValueError as e:
-                logger.error(f"Could not parse relationship path for '{table.name}': {e}")
-                return None
+            path_strings = self.config._relationship_dict[table.name]
+            logger.debug(f"[Tenant Deleter] [Collect] '{table.name}' using relationship paths: {path_strings}")
 
-            if parsed_path['start_table'] != table.name:
-                logger.error(f"Mismatched start table for {table.name} in path '{path_string}'")
-                return None
-
-            subquery = select(*primary_selection) if isinstance(primary_selection, list) else select(primary_selection)
-            join_string = ''
-            for i, step in enumerate(parsed_path['steps']):
-                from_tbl = self.metadata.tables[step['from_table']]
-                to_tbl = self.metadata.tables[step['to_table']]
-                subquery = subquery.join(to_tbl, from_tbl.c[step['from_key']] == to_tbl.c[step['to_key']])
-                join_string += f"{step['from_table']}.{step['from_key']}={step['to_table']}.{step['to_key']} "
-                if i < len(parsed_path['steps']) - 1:
-                    join_string += '-> '
-            logger.info(f"[Tenant Deleter] [Collect] '{table.name}' path:  " + join_string)
-
-            final_table = self.metadata.tables[parsed_path['final_table']]
-
-            # Apply tenant filters to final table
-            final_applicable_filters = []
-            for tenant_filter in self.config.tenant_filters:
+            # Collect queries for all paths (OR logic)
+            path_queries = []
+            for path_string in path_strings:
                 try:
-                    filter_expr = tenant_filter(final_table)
-                    final_applicable_filters.append(filter_expr)
-                except (AttributeError, KeyError):
+                    parsed_path = _parse_join_path(path_string)
+                except ValueError as e:
+                    logger.error(f"Could not parse relationship path for '{table.name}': {e}")
                     continue
 
-            if final_applicable_filters:
-                if len(final_applicable_filters) == 1:
-                    return subquery.where(final_applicable_filters[0])
+                if parsed_path['start_table'] != table.name:
+                    logger.error(f"Mismatched start table for {table.name} in path '{path_string}'")
+                    continue
+
+                if isinstance(primary_selection, list):
+                    subquery = select(*primary_selection)
                 else:
-                    return subquery.where(or_(*final_applicable_filters))
+                    subquery = select(primary_selection)
+                join_string = ''
+                for i, step in enumerate(parsed_path['steps']):
+                    from_tbl = self.metadata.tables[step['from_table']]
+                    to_tbl = self.metadata.tables[step['to_table']]
+                    subquery = subquery.join(to_tbl, from_tbl.c[step['from_key']] == to_tbl.c[step['to_key']])
+                    join_string += f"{step['from_table']}.{step['from_key']}={step['to_table']}.{step['to_key']} "
+                    if i < len(parsed_path['steps']) - 1:
+                        join_string += '-> '
+                logger.info(f"[Tenant Deleter] [Collect] '{table.name}' path:  " + join_string)
+
+                final_table = self.metadata.tables[parsed_path['final_table']]
+
+                # Apply tenant filters to final table
+                final_applicable_filters = []
+                for tenant_filter in self.config.tenant_filters:
+                    try:
+                        filter_expr = tenant_filter(final_table)
+                        final_applicable_filters.append(filter_expr)
+                    except (AttributeError, KeyError):
+                        continue
+
+                if final_applicable_filters:
+                    if len(final_applicable_filters) == 1:
+                        path_queries.append(subquery.where(final_applicable_filters[0]))
+                    else:
+                        path_queries.append(subquery.where(or_(*final_applicable_filters)))
+                else:
+                    logger.error(f"Final table '{parsed_path['final_table']}' in path '{path_string}' cannot be filtered by any tenant filters!")  # noqa
+
+            # If we have multiple valid path queries, combine them with UNION
+            print(f"[Tenant Deleter] [Collect] '{table.name}' found {len(path_queries)} valid relationship paths")
+            if len(path_queries) == 1:
+                return path_queries[0]
+            elif len(path_queries) > 1:
+                # Use UNION to combine all path queries (OR logic)
+                return path_queries[0].union(*path_queries[1:])
             else:
-                logger.error(f"Final table '{parsed_path['final_table']}' in path '{path_string}' cannot be filtered by any tenant filters!")  # noqa
+                logger.error(f"No valid relationship paths found for table '{table.name}'")
+                return None
         return None
 
     def _collect_pks_to_delete(self):

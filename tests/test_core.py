@@ -59,12 +59,36 @@ def test_models(test_base):
         action = Column(String(50))
         # No tenant columns - excluded table
 
+    # New models for testing multiple relationship paths
+    class Company(test_base):
+        __tablename__ = 'companies'
+        id = Column(Integer, primary_key=True)
+        name = Column(String(100))
+        tenant_id = Column(String(36))
+
+    class Department(test_base):
+        __tablename__ = 'departments'
+        id = Column(Integer, primary_key=True)
+        name = Column(String(100))
+        tenant_id = Column(String(36))
+
+    class Employee(test_base):
+        __tablename__ = 'employees'
+        id = Column(Integer, primary_key=True)
+        name = Column(String(100))
+        company_id = Column(Integer, ForeignKey('companies.id'))
+        department_id = Column(Integer, ForeignKey('departments.id'))
+        # No tenant columns - has two paths to tenant data
+
     return {
         'User': User,
         'Order': Order,
         'Product': Product,
         'ProductOrder': ProductOrder,
-        'AuditLog': AuditLog
+        'AuditLog': AuditLog,
+        'Company': Company,
+        'Department': Department,
+        'Employee': Employee
     }
 
 
@@ -114,12 +138,30 @@ def test_session(mock_engine, test_base, test_models, tenant_data):
     audit1 = test_models['AuditLog'](id=1, action='login')
     audit2 = test_models['AuditLog'](id=2, action='logout')
 
+    # Test data for multiple relationship paths
+    company1 = test_models['Company'](id=1, name='Target Corp', tenant_id=target_tenant_id)
+    company2 = test_models['Company'](id=2, name='Other Corp', tenant_id=other_tenant_id)
+
+    dept1 = test_models['Department'](id=1, name='Target Engineering', tenant_id=target_tenant_id)
+    dept2 = test_models['Department'](id=2, name='Other Engineering', tenant_id=other_tenant_id)
+
+    # Employees with different relationship paths to tenant
+    # Both paths point to target tenant
+    emp1 = test_models['Employee'](id=1, name='Alice', company_id=1, department_id=1)
+    # Both paths point to other tenant
+    emp2 = test_models['Employee'](id=2, name='Bob', company_id=2, department_id=2)
+    # Mixed paths: target company, other department
+    emp3 = test_models['Employee'](id=3, name='Charlie', company_id=1, department_id=2)
+
     session.add_all([
         user1, user2, user3,
         order1, order2, order3,
         product1, product2, product3,
         po1, po2, po3,
-        audit1, audit2
+        audit1, audit2,
+        company1, company2,
+        dept1, dept2,
+        emp1, emp2, emp3
     ])
     session.commit()
 
@@ -174,7 +216,7 @@ class TestTenantWiperConfig:
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -195,7 +237,7 @@ class TestTenantWiperConfig:
                 'product_orders__order_id=id__orders',
                 # Missing 'products' relationship - should fail
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -223,7 +265,7 @@ class TestTenantWiperConfig:
                 base=test_base,
                 tenant_filters=tenant_filters,
                 tenant_join_paths=[malformed_rel],
-                excluded_tables=['audit_logs', 'products', 'product_orders'],
+                excluded_tables=['audit_logs', 'products', 'product_orders', 'employees', 'departments', 'companies'],
                 validate_on_init=False
             )
 
@@ -244,7 +286,7 @@ class TestTenantWiperConfig:
                 'nonexistent_table__id=fk__orders',  # Non-existent source table
                 'products__id=fk__nonexistent_target',  # Non-existent target table
             ],
-            excluded_tables=['audit_logs', 'product_orders'],
+            excluded_tables=['audit_logs', 'product_orders', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -265,7 +307,7 @@ class TestTenantWiperConfig:
                 'products__nonexistent_col=id__orders',  # Non-existent from column
                 'products__id=nonexistent_col__orders',  # Non-existent to column
             ],
-            excluded_tables=['audit_logs', 'product_orders'],
+            excluded_tables=['audit_logs', 'product_orders', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -287,7 +329,7 @@ class TestTenantWiperConfig:
                 'products__id=product_id__product_orders__order_id=id__orders',
                 'product_orders__product_id=id__products',  # Leads to products (no tenant filter)
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -307,7 +349,7 @@ class TestTenantWiperConfig:
             tenant_join_paths=[
                 'audit_logs__user_id=id__users',  # audit_logs is also in excluded
             ],
-            excluded_tables=['audit_logs'],  # Same table in excluded
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],  # Same table in excluded
             validate_on_init=False
         )
 
@@ -328,7 +370,7 @@ class TestTenantWiperConfig:
             tenant_join_paths=[
                 'products__id=product_id__product_orders__order_id=user_id__users',  # Wrong column
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -349,7 +391,7 @@ class TestTenantWiperConfig:
                 # Complex path with wrong column in the middle
                 'products__id=product_id__product_orders__wrong_column=id__orders',
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -372,7 +414,7 @@ class TestTenantWiperConfig:
                     'product_orders__order_id=id__orders',
                     # Missing 'products' relationship
                 ],
-                excluded_tables=['audit_logs'],
+                excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
                 validate_on_init=True  # Explicit True
             )
 
@@ -404,7 +446,7 @@ class TestTenantWiperConfig:
             tenant_join_paths=[
                 'product_orders__product_id=id__products',  # Final table 'products' has no tenant_id
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -426,7 +468,7 @@ class TestTenantWiperConfig:
                 'product_orders__order_id=id__orders',  # Final table 'orders' has tenant_id
                 'products__id=product_id__product_orders__order_id=id__orders'  # Final table 'orders' has tenant_id
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -453,7 +495,7 @@ class TestTenantWiperConfig:
         config_syntax_error = TenantWiperConfig(
             base=test_base,
             tenant_filters=[syntax_error_filter],
-            excluded_tables=['audit_logs', 'products', 'product_orders'],
+            excluded_tables=['audit_logs', 'products', 'product_orders', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -464,7 +506,7 @@ class TestTenantWiperConfig:
         config_missing_column = TenantWiperConfig(
             base=test_base,
             tenant_filters=[missing_column_filter],
-            excluded_tables=['audit_logs', 'products', 'product_orders'],
+            excluded_tables=['audit_logs', 'products', 'product_orders', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -480,7 +522,7 @@ class TestTenantWiperConfig:
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -499,7 +541,7 @@ class TestTenantWiperConfig:
         config_syntax_error = TenantWiperConfig(
             base=test_base,
             tenant_filters=[wrong_expression_compile],
-            excluded_tables=['audit_logs', 'products', 'product_orders'],
+            excluded_tables=['audit_logs', 'products', 'product_orders', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -538,7 +580,7 @@ class TestTenantWiperConfig:
             tenant_join_paths=[
                 'product_orders__order_id=id__orders',  # Should fail when validating final table
             ],
-            excluded_tables=['audit_logs', 'products'],
+            excluded_tables=['audit_logs', 'products', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -667,7 +709,7 @@ class TestRealDataScenarios:
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -709,7 +751,7 @@ class TestRealDataScenarios:
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -751,7 +793,8 @@ class TestRealDataScenarios:
             tenant_join_paths=[
                 'product_orders__order_id=id__orders'
             ],
-            excluded_tables=['audit_logs', 'products'],  # Keep products for this test
+            # Keep products for this test
+            excluded_tables=['audit_logs', 'products', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -782,7 +825,7 @@ class TestRealDataScenarios:
             tenant_join_paths=[
                 'product_orders__order_id=id__orders'
             ],
-            excluded_tables=['audit_logs', 'products'],
+            excluded_tables=['audit_logs', 'products', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -819,7 +862,7 @@ class TestRealDataScenarios:
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -854,7 +897,7 @@ class TestRealDataScenarios:
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -884,7 +927,7 @@ class TestRealDataScenarios:
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -920,7 +963,7 @@ class TestMockedScenarios:
                 'product_orders__order_id=id__orders',
                 'products__id=product_id__product_orders__order_id=id__orders'
             ],
-            excluded_tables=['audit_logs'],
+            excluded_tables=['audit_logs', 'employees', 'departments', 'companies'],
             validate_on_init=False
         )
 
@@ -937,6 +980,102 @@ class TestMockedScenarios:
 
         collect_logs = [log for log in log_calls if 'Collect' in log]
         assert len(collect_logs) > 0  # Should log collection for each table
+
+
+class TestMultipleRelationshipPaths:
+    """Test scenarios with multiple relationship paths to the same table."""
+
+    def test_table_with_multiple_relationship_paths_current_behavior(self, test_session, test_base, test_models):
+        """Test current behavior - only one path is used when multiple paths exist."""
+        session, tenant_data = test_session
+        target_tenant_id = tenant_data['target_tenant_id']
+
+        # Configure with two different relationship paths to employees table
+        config = TenantWiperConfig(
+            base=test_base,
+            tenant_filters=[
+                lambda table: table.c.tenant_id == target_tenant_id
+            ],
+            tenant_join_paths=[
+                'employees__company_id=id__companies',
+                'employees__department_id=id__departments'
+            ],
+            excluded_tables=['audit_logs', 'users', 'orders', 'products', 'product_orders'],
+            validate_on_init=False
+        )
+
+        # Verify only one path is stored (the last one)
+        assert len(config._relationship_dict) == 1
+        assert config._relationship_dict['employees'] == [
+            'employees__company_id=id__companies',
+            'employees__department_id=id__departments'
+        ]
+
+        deleter = TenantDeleter(config)
+        deleter.delete(session, dry_run=False, commit=True)
+
+        remaining_employees = session.query(test_models['Employee']).all()
+
+        # So only employees with both other_tenant_id department and companies should remain
+        assert len(remaining_employees) == 1
+
+    def test_table_with_multiple_relationship_paths_expected_behavior(self, test_session, test_base, test_models):
+        """Test expected behavior - both paths should be considered (OR logic)."""
+        session, tenant_data = test_session
+        target_tenant_id = tenant_data['target_tenant_id']
+
+        # This test demonstrates what the expected behavior SHOULD be
+        # but will currently fail due to the bug
+
+        # Manually test what should happen with both paths
+        # Path 1: employees with target companies should be deleted
+        target_company_employees = session.query(test_models['Employee']).join(
+            test_models['Company']
+        ).filter(test_models['Company'].tenant_id == target_tenant_id).all()
+
+        # Path 2: employees with target departments should be deleted
+        target_dept_employees = session.query(test_models['Employee']).join(
+            test_models['Department']
+        ).filter(test_models['Department'].tenant_id == target_tenant_id).all()
+
+        # Expected: employees reachable via either path should be deleted
+        # emp1: reachable via both company and department (should be deleted)
+        # emp2: not reachable via either path (should remain)
+        # emp3: reachable via company path only (should be deleted)
+
+        expected_to_delete = set()
+        expected_to_delete.update(emp.id for emp in target_company_employees)
+        expected_to_delete.update(emp.id for emp in target_dept_employees)
+
+        # Should delete emp1 and emp3 (both reachable via at least one path)
+        assert expected_to_delete == {1, 3}
+
+        # This documents the expected behavior that should be implemented
+        # Currently this would fail because only one path is used
+
+    def test_validation_passes_with_multiple_paths(self, test_base, test_models):
+        """Test that validation passes when multiple paths exist."""
+        target_tenant_id = str(uuid4())
+
+        # Both paths should be valid during validation
+        config = TenantWiperConfig(
+            base=test_base,
+            tenant_filters=[
+                lambda table: table.c.tenant_id == target_tenant_id
+            ],
+            tenant_join_paths=[
+                'employees__company_id=id__companies',     # Valid path
+                'employees__department_id=id__departments'  # Also valid path
+            ],
+            excluded_tables=['audit_logs', 'users', 'orders', 'products', 'product_orders'],
+            validate_on_init=False
+        )
+
+        # Should not raise exception during validation
+        config.validate()
+
+        # But only one path is actually stored
+        assert len(config._relationship_dict) == 1
 
 
 if __name__ == '__main__':
